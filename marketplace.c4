@@ -1,0 +1,199 @@
+specification {
+  element actor {
+    style {
+      shape person
+      color green
+    }
+  }
+  element system {
+    style {
+      color blue
+    }
+  }
+  element container {
+    style {
+      color sky
+    }
+  }
+  element database {
+    style {
+      shape storage
+      color slate
+    }
+  }
+  element queue {
+    style {
+      shape queue
+      color amber
+    }
+  }
+
+  relationship sync {
+    line dashed
+  }
+
+  relationship async {
+    line dotted
+    color amber
+  }
+
+  tag critical
+}
+
+model {
+  buyer = actor 'Покупатель' {
+    description 'Пользователь, оформляющий заказы на платформе'
+  }
+
+  seller = actor 'Продавец' {
+    description 'Пользователь, размещающий товары для продажи'
+  }
+
+  paymentProvider = system 'Платёжная система' {
+    description 'Внешний платёжный провайдер (YooMoney / Stripe)'
+  }
+
+  emailProvider = system 'Email-провайдер' {
+    description 'Внешний SMTP-сервис (SendGrid / Mailgun)'
+  }
+
+  marketplace = system 'Marketplace Platform' {
+    description 'E-commerce платформа'
+
+    webapp = container 'Web Application' {
+        description 'Application in browser'
+        technology 'React'
+        style {
+            shape browser
+        }
+    }
+
+    apiGateway = container 'API Gateway' {
+      #critical
+      technology 'Python, Flask'
+      description 'Единая точка входа. Маршрутизация запросов, аутентификация, rate limiting'
+    }
+
+    userService = container 'User Info Service' {
+      technology 'Python / FastAPI'
+      description 'Регистрация и аутентификация. Управление профилями покупателей и продавцов'
+    }
+
+    userDb = database 'User DB' {
+      technology 'PostgreSQL'
+      description 'Пользователи, роли, хэши паролей, сессии'
+    }
+
+    catalogService = container 'Catalog Service' {
+      technology 'Python / FastAPI'
+      description 'CRUD товаров, категорий и атрибутов для продавцов. Поиск и фильтрация каталога'
+    }
+
+    catalogDb = database 'Catalog DB' {
+      technology 'PostgreSQL'
+      description 'Товары, категории, атрибуты, остатки на складе'
+    }
+
+    feedService = container 'Feed Service' {
+      technology 'Python / FastAPI'
+      description 'Персонализированная лента товаров. Ранжирование на основе истории просмотров и покупок пользователя'
+    }
+
+    feedCache = database 'Feed Cache' {
+      technology 'Redis'
+      description 'Кешированные персональные ленты'
+    }
+
+    basketService = container 'Basket' {
+      technology 'Python / FastAPI'
+      description 'Корзина пользователя'
+    }
+
+    orderService = container 'Order Service' {
+      technology 'Python / FastAPI'
+      description 'Создание заказов, управление их жизненным циклом и историей статусов'
+    }
+
+    orderDb = database 'Order DB' {
+      technology 'PostgreSQL'
+      description 'Заказы, позиции заказов, история переходов статусов'
+    }
+
+    paymentService = container 'Payment Service' {
+      technology 'Python / FastAPI'
+      description 'Инициация и учёт платежей. Интеграция с внешним провайдером. Хранение истории транзакций'
+    }
+
+    paymentDb = database 'Payment DB' {
+      technology 'PostgreSQL'
+      description 'Транзакции, статусы платежей'
+    }
+
+    notificationService = container 'Notification Service' {
+      technology 'Python / FastAPI'
+      description 'Отправка email/push-уведомлений о смене статуса заказа и успешной оплате'
+    }
+
+    broker = queue 'Message Broker' {
+      technology 'RabbitMQ'
+      description 'Асинхронный обмен событиями между сервисами'
+    }
+  }
+
+  buyer -> marketplace.webapp 'HTTPS'
+  seller -> marketplace.webapp 'HTTPS'
+
+  marketplace.webapp -[sync]-> marketplace.apiGateway 'HTTPS'
+
+  marketplace.apiGateway -[sync]-> marketplace.catalogService 'REST'
+  marketplace.apiGateway -[sync]-> marketplace.userService 'REST'
+  marketplace.apiGateway -[sync]-> marketplace.feedService 'REST'
+  marketplace.apiGateway -[sync]-> marketplace.orderService 'REST'
+  marketplace.apiGateway -[sync]-> marketplace.paymentService 'REST'
+  marketplace.apiGateway -[sync]-> marketplace.basketService 'REST'
+
+  marketplace.userService -[sync]-> marketplace.userDb 'SQL'
+  marketplace.userService -[sync]-> marketplace.catalogService 'REST'
+
+  marketplace.catalogService -[sync]-> marketplace.catalogDb 'SQL'
+
+  marketplace.basketService -[sync]-> marketplace.userService 'SQL'
+
+  marketplace.feedService -[sync]-> marketplace.feedCache 'GET / SET'
+  marketplace.feedService -[sync]-> marketplace.catalogService 'REST — данные товаров для ранжирования'
+
+  marketplace.orderService -[sync]-> marketplace.orderDb 'SQL'
+  marketplace.orderService -[sync]-> marketplace.catalogService 'REST — проверка наличия товара'
+  marketplace.orderService -[async]-> marketplace.broker 'Публикует order.created / order.status_changed'
+
+  marketplace.paymentService -[sync]-> marketplace.paymentDb 'SQL'
+  marketplace.paymentService -[sync]-> paymentProvider 'REST — обработка платежа'
+  marketplace.paymentService -[async]-> marketplace.broker 'Публикует payment.completed'
+
+  marketplace.broker -[async]-> marketplace.paymentService 'order.created -> инициирует платёж'
+  marketplace.broker -[async]-> marketplace.notificationService 'order.status_changed / payment.completed'
+
+  marketplace.notificationService -[sync]-> emailProvider 'SMTP — отправка email'
+}
+
+views {
+  view index {
+    title 'Marketplace — System Context (C4 Level 1)'
+    include buyer, seller, marketplace, paymentProvider, emailProvider
+
+    style buyer, seller {
+      color green
+    }
+    style marketplace {
+      color blue
+    }
+    style paymentProvider, emailProvider {
+      color gray
+    }
+  }
+
+  view containers of marketplace {
+    title 'Marketplace — Container Diagram (C4 Level 2)'
+    include *
+  }
+}
