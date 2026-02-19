@@ -4,8 +4,10 @@
 ## Запуск сервиса
 сборка
 ```docker build -t soa_hw1 .```
+
 запуск
 ```docker run -p 8000:8000 soa_hw1```
+
 проверка
 ```curl -v http://localhost:8000/health```
 
