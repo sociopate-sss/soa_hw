@@ -1,0 +1,114 @@
+syntax = "proto3";
+
+package flight;
+
+import "google/protobuf/timestamp.proto";
+
+// --- Enums ---
+
+enum FlightStatus {
+  FLIGHT_STATUS_UNSPECIFIED = 0;
+  SCHEDULED = 1;
+  DEPARTED = 2;
+  CANCELLED = 3;
+  COMPLETED = 4;
+}
+
+enum ReservationStatus {
+  RESERVATION_STATUS_UNSPECIFIED = 0;
+  ACTIVE = 1;
+  RELEASED = 2;
+  EXPIRED = 3;
+}
+
+// --- Messages ---
+
+message Flight {
+  int64 id = 1;
+  string flight_number = 2;
+  string airline = 3;
+  string origin = 4;          // IATA code (e.g. SVO, LED)
+  string destination = 5;     // IATA code
+  google.protobuf.Timestamp departure_time = 6;
+  google.protobuf.Timestamp arrival_time = 7;
+  int32 total_seats = 8;
+  int32 available_seats = 9;
+  double price = 10;
+  FlightStatus status = 11;
+}
+
+message SeatReservation {
+  int64 id = 1;
+  int64 flight_id = 2;
+  string booking_id = 3;
+  int32 seat_count = 4;
+  ReservationStatus status = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
+
+// --- SearchFlights ---
+
+message SearchFlightsRequest {
+  string origin = 1;               // IATA code, required
+  string destination = 2;          // IATA code, required
+  google.protobuf.Timestamp date = 3;  // optional: filter by departure date
+}
+
+message SearchFlightsResponse {
+  repeated Flight flights = 1;
+}
+
+// --- GetFlight ---
+
+message GetFlightRequest {
+  int64 id = 1;
+}
+
+message GetFlightResponse {
+  Flight flight = 1;
+}
+
+// --- ReserveSeats ---
+
+message ReserveSeatsRequest {
+  int64 flight_id = 1;
+  int32 seat_count = 2;
+  string booking_id = 3;   // unique ID from Booking Service (idempotency key)
+}
+
+message ReserveSeatsResponse {
+  int64 reservation_id = 1;
+  ReservationStatus status = 2;
+}
+
+// --- ReleaseReservation ---
+
+message ReleaseReservationRequest {
+  string booking_id = 1;   // find reservation by booking_id
+}
+
+message ReleaseReservationResponse {
+  bool success = 1;
+}
+
+// --- Service ---
+
+service FlightService {
+  // Search flights by route and optional date. Returns only SCHEDULED flights.
+  // Errors: INVALID_ARGUMENT if origin or destination is empty.
+  rpc SearchFlights(SearchFlightsRequest) returns (SearchFlightsResponse);
+
+  // Get flight by ID.
+  // Errors: NOT_FOUND if flight does not exist.
+  rpc GetFlight(GetFlightRequest) returns (GetFlightResponse);
+
+  // Atomically reserve seats on a flight for a booking.
+  // Idempotent: repeated calls with the same booking_id return existing reservation.
+  // Errors: NOT_FOUND if flight does not exist.
+  //         RESOURCE_EXHAUSTED if not enough available seats.
+  rpc ReserveSeats(ReserveSeatsRequest) returns (ReserveSeatsResponse);
+
+  // Release a previously active reservation, returning seats to the flight.
+  // Errors: NOT_FOUND if no active reservation found for booking_id.
+  rpc ReleaseReservation(ReleaseReservationRequest) returns (ReleaseReservationResponse);
+}
